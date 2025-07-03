@@ -1,20 +1,42 @@
-# fichier : rebuild_embeddings_50k.py
+# rebuild_embeddings_50k.py
+# ------------------------------------------------------------
+# • Encode 50 000 passages (shard_docs_50k.txt)
+# • Sauvegarde un memmap float32  (N, 384)  -> shard_embeds.npy
+# ------------------------------------------------------------
+
 from sentence_transformers import SentenceTransformer
 import numpy as np, tqdm, pathlib
 
-DOC_FILE = "shard_docs_50k.txt"
-EMB_FILE = "shard_embeds.npy"
-BATCH    = 64
+# --------- FICHIERS ET PARAMÈTRES ---------
+DOC_FILE = "shard_docs_50k.txt"      # chaque ligne = passage complet
+EMB_FILE = "shard_embeds.npy"        # sortie
+BATCH    = 64                        # taille de batch SBERT
 
-texts = [l.strip().split('\t')[-1] for l in open(DOC_FILE)]   # prend le passage_text
+# --------- CHARGEMENT DU CORPUS ---------
+with open(DOC_FILE, encoding="utf8") as f:
+    passages = [line.strip().split('\t')[-1] for line in f]  # colonne passage_text
+
+print(f"➜ {len(passages):,} passages à encoder")
+
+# --------- MODÈLE SBERT ---------
 model = SentenceTransformer("all-MiniLM-L6-v2")
+EMB_DIM = model.get_sentence_embedding_dimension()          # 384 dims
 
-emb = np.memmap(EMB_FILE, dtype="float32", mode="w+", shape=(len(texts), 768))
+print("➜ Dimension des embeddings :", EMB_DIM)
 
-for i in tqdm.trange(0, len(texts), BATCH):
+# --------- MEMMAP EN SORTIE (peu de RAM) ---------
+emb = np.memmap(EMB_FILE,
+                dtype="float32",
+                mode="w+",
+                shape=(len(passages), EMB_DIM))
+
+# --------- ENCODAGE PAR LOTS ---------
+for i in tqdm.trange(0, len(passages), BATCH, desc="Encoding"):
     emb[i:i+BATCH] = model.encode(
-        texts[i:i+BATCH],
+        passages[i:i+BATCH],
         batch_size=BATCH,
-        normalize_embeddings=True)
+        normalize_embeddings=True,
+        show_progress_bar=False
+    )
 
-print("✅ embeddings sauvegardés :", emb.shape, EMB_FILE)
+print("✅  Embeddings terminés :", emb.shape, "➜", EMB_FILE)
